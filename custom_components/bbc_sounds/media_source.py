@@ -15,7 +15,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.const import CONF_USERNAME
 
 from .const import DOMAIN
-from .logo import BBC_SOUNDS_LOGO_B64
 from .sounds import SoundsClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -139,7 +138,7 @@ class BBCSoundsMediaSource(MediaSource):
             can_expand=True,
             children_media_class="directory",
             children=children,
-            thumbnail=BBC_SOUNDS_LOGO_B64,
+            thumbnail="https://raw.githubusercontent.com/SimeonSouttar/bbc-sounds-hacs/main/bbc_sounds_logo.png",
         )
 
     async def _async_browse_live(self) -> BrowseMediaSource:
