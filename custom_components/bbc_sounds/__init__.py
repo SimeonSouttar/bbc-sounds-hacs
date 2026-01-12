@@ -18,18 +18,20 @@ except Exception:
     raise
 
 from .const import DOMAIN
+from .views import BBCSoundsLogoView
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = []  # We don't have standard platforms like media_player yet, just media_source? 
-# Actually media_source is not a platform in the traditional sense for config entries usually?
-# But wait, if I want it to show up in Media Browser, I need to verify how that connects.
-# Usually, having media_source.py is enough if the integration is loaded.
+PLATFORMS: list[Platform] = [Platform.MEDIA_SOURCE]
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up BBC Sounds from a config entry."""
     try:
         hass.data.setdefault(DOMAIN, {})
+
+        # Register the logo view
+        hass.http.register_view(BBCSoundsLogoView(hass))
 
         session = async_get_clientsession(hass)
         

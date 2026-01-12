@@ -138,7 +138,7 @@ class BBCSoundsMediaSource(MediaSource):
             can_expand=True,
             children_media_class="directory",
             children=children,
-            thumbnail="https://raw.githubusercontent.com/SimeonSouttar/bbc-sounds-hacs/main/bbc_sounds_logo.png",
+            thumbnail="/api/bbc_sounds/logo",
         )
 
     async def _async_browse_live(self) -> BrowseMediaSource:
