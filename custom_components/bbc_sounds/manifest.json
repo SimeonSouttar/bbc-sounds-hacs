@@ -1,0 +1,13 @@
+{
+    "domain": "bbc_sounds",
+    "name": "BBC Sounds",
+    "version": "1.0.0",
+    "documentation": "https://github.com/kieranhogg/auntie-sounds",
+    "requirements": [
+        "pytz==2025.2"
+    ],
+    "dependencies": [],
+    "codeowners": [],
+    "config_flow": true,
+    "iot_class": "cloud_polling"
+}
