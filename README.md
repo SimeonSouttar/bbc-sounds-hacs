@@ -1,13 +1,12 @@
 
 # BBC Sounds for Home Assistant
 
-Listen to BBC Sounds live radio, podcasts, and on-demand content directly from Home Assistant.
+Listen to BBC Sounds live radio content directly from Home Assistant.
 
 ## Features
-- **Live Radio**: Play all BBC radio stations (Radio 1, Radio 4, 6 Music, etc.) with high-quality adaptive streaming.
-- **Media Browser**: Browse live stations and on-demand content.
-- **Logo Support**: Includes custom channel branding.
-- **Vendored Dependencies**: No external pip packages required.
+- **Live Radio**: Play BBC radio stations (Radio 1, Radio 4, 6 Music, etc.) with high-quality adaptive streaming.
+- **Login Using BBC Account**: Login with your BBC Sounds account to access the radio streams
+- **Media Browser**: Browse and play live stations and cast to media players.
 
 ## Installation via HACS
 
@@ -23,7 +22,7 @@ Listen to BBC Sounds live radio, podcasts, and on-demand content directly from H
 1.  Go to **Settings** > **Devices & Services**.
 2.  Click **Add Integration**.
 3.  Search for **BBC Sounds**.
-4.  (Optional) Enter your BBC account username and password for personalized content.
+4.  (Optional) Enter your BBC account username and password for personalised content.
 
 ## Disclaimer
 This is a custom integration and is not officially affiliated with the BBC.
