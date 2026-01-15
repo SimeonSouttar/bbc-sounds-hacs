@@ -39,7 +39,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Use HA configured timezone or fallback to UTC
         tz_name = hass.config.time_zone or "UTC"
         try:
-            timezone = pytz.timezone(tz_name)
+            timezone = await hass.async_add_executor_job(pytz.timezone, tz_name)
         except pytz.UnknownTimeZoneError:
             _LOGGER.warning("Unknown timezone %s, falling back to UTC", tz_name)
             timezone = pytz.UTC
@@ -55,6 +55,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 logger=_LOGGER,
                 timezone=timezone, 
             )
+            # Load cookies in executor to avoid blocking I/O
+            await hass.async_add_executor_job(client.auth.load_cookies)
         except Exception as err:
             _LOGGER.error("Failed to initialize SoundsClient: %s", err)
             return False

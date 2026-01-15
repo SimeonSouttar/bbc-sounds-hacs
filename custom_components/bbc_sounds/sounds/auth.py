@@ -63,6 +63,8 @@ class AuthService(Base):
             # Can't move this to the above conditional as self.logger not initialised yet
             self.logger.info("Saving login pages to file as requested")
 
+    def load_cookies(self) -> None:
+        """Load cookies from disk."""
         try:
             self._session._cookie_jar.load(COOKIE_FILE)  # type: ignore
         except FileNotFoundError:
