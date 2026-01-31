@@ -182,7 +182,8 @@ class BBCSoundsMediaSource(MediaSource):
             stations = await client.stations.get_stations()
             
             for station in stations:
-                if not station or not station.item_id:
+                # Use station.id for lookup since get_station() matches on s.id
+                if not station or not station.id:
                     continue
 
                 # Get station name
@@ -199,10 +200,12 @@ class BBCSoundsMediaSource(MediaSource):
                 elif hasattr(station, "image_url") and station.image_url:
                     thumbnail = station.image_url
 
+                _LOGGER.debug("Adding station: %s with id: %s", name, station.id)
+
                 children.append(
                     BrowseMediaSource(
                         domain=DOMAIN,
-                        identifier=f"live/{station.item_id}",
+                        identifier=f"live/{station.id}",
                         media_class=MediaClass.CHANNEL,
                         media_content_type=MediaType.MUSIC,
                         title=name,
