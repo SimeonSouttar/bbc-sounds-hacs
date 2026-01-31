@@ -2,93 +2,67 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-try:
-    from .sounds import SoundsClient, exceptions
-    import pytz
-except Exception:
-    _LOGGER.exception("Failed to import sounds library")
-    # Re-raise so HA knows it failed
-    raise
+from sounds import SoundsClient, exceptions
 
 from .const import DOMAIN
-from .views import BBCSoundsLogoView
+
+if TYPE_CHECKING:
+    from aiohttp import ClientSession
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.MEDIA_SOURCE]
+# Type alias for config entry with runtime data
+type BBCSoundsConfigEntry = ConfigEntry[SoundsClient]
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: BBCSoundsConfigEntry) -> bool:
     """Set up BBC Sounds from a config entry."""
+    session: ClientSession = async_get_clientsession(hass)
+    
+    # Get timezone from HA config
     try:
-        hass.data.setdefault(DOMAIN, {})
-
-        # Register the logo view
-        hass.http.register_view(BBCSoundsLogoView(hass))
-
-        session = async_get_clientsession(hass)
-        
-        # Initialize SoundsClient
-        # Use HA configured timezone or fallback to UTC
-        tz_name = hass.config.time_zone or "UTC"
-        try:
-            timezone = await hass.async_add_executor_job(pytz.timezone, tz_name)
-        except pytz.UnknownTimeZoneError:
-            _LOGGER.warning("Unknown timezone %s, falling back to UTC", tz_name)
-            timezone = pytz.UTC
-        except Exception as err:
-            _LOGGER.warning("Error getting timezone %s: %s, falling back to UTC", tz_name, err)
-            timezone = pytz.UTC
-
-        _LOGGER.debug("Initializing BBC Sounds client with timezone: %s", timezone)
-
-        try:
-            client = SoundsClient(
-                session=session,
-                logger=_LOGGER,
-                timezone=timezone, 
-            )
-            # Load cookies in executor to avoid blocking I/O
-            await hass.async_add_executor_job(client.auth.load_cookies)
-        except Exception as err:
-            _LOGGER.error("Failed to initialize SoundsClient: %s", err)
-            return False
-
-        username = entry.data.get(CONF_USERNAME)
-        password = entry.data.get(CONF_PASSWORD)
-
-        if username and password:
-            try:
-                await client.auth.authenticate(username, password)
-                _LOGGER.debug("Authenticated with BBC Sounds as %s", username)
-            except exceptions.LoginFailedError as err:
-                _LOGGER.error("Failed to authenticate with BBC Sounds: %s", err)
-                return False
-            except Exception as err:
-                _LOGGER.error("Error during BBC Sounds authentication: %s", err)
-                return False
-
-        hass.data[DOMAIN][entry.entry_id] = client
-
-        # We don't have traditional platforms yet, but we will ensure the component is loaded.
-        # If we add media_player later, we add it here.
-        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-        return True
+        from zoneinfo import ZoneInfo
+        timezone = ZoneInfo(hass.config.time_zone) if hass.config.time_zone else None
     except Exception:
-        raise
+        timezone = None
+    
+    client = SoundsClient(
+        session=session,
+        logger=_LOGGER,
+        timezone=timezone,
+    )
+    
+    # Authenticate if credentials are provided
+    username = entry.data.get(CONF_USERNAME)
+    password = entry.data.get(CONF_PASSWORD)
+    
+    if username and password:
+        try:
+            await client.auth.authenticate(username=username, password=password)
+            _LOGGER.debug("Authenticated with BBC Sounds as %s", username)
+        except exceptions.LoginFailedError as err:
+            raise ConfigEntryAuthFailed("Invalid BBC account credentials") from err
+        except exceptions.NetworkError as err:
+            raise ConfigEntryNotReady("Could not connect to BBC services") from err
+        except exceptions.APIResponseError as err:
+            raise ConfigEntryNotReady(f"BBC API error: {err}") from err
+    
+    # Store client in runtime_data for media_source to access
+    entry.runtime_data = client
+    
+    # No platform forwarding needed - media_source registers itself via async_get_media_source
+    return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: BBCSoundsConfigEntry) -> bool:
     """Unload a config entry."""
-    if unload_ok := await hass.config_entries.async_unload_platforms(hass, entry, PLATFORMS):
-        hass.data[DOMAIN].pop(entry.entry_id)
-
-    return unload_ok
+    # Simple cleanup - no platforms to unload
+    return True

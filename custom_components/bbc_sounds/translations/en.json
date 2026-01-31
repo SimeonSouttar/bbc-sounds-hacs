@@ -2,8 +2,8 @@
     "config": {
         "step": {
             "user": {
-                "title": "Connect to BBC Sounds",
-                "description": "Enter your BBC account details. Leave blank to browse anonymously (some content may be restricted).",
+                "title": "BBC Sounds",
+                "description": "A BBC account is optional but may be required for UK-only content. Leave fields empty to set up without an account.",
                 "data": {
                     "username": "Email or Username",
                     "password": "Password"
@@ -11,12 +11,12 @@
             }
         },
         "error": {
-            "cannot_connect": "Failed to connect",
-            "invalid_auth": "Invalid authentication",
-            "unknown": "Unexpected error"
+            "invalid_auth": "Invalid BBC account credentials",
+            "cannot_connect": "Could not connect to BBC services",
+            "unknown": "An unexpected error occurred"
         },
         "abort": {
-            "already_configured": "Device is already configured"
+            "already_configured": "BBC Sounds is already configured"
         }
     }
 }

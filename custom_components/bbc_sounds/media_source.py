@@ -2,164 +2,198 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
-
-from homeassistant.components.media_source.error import MediaSourceError, Unresolvable
-from homeassistant.components.media_source.models import (
+from homeassistant.components.media_player import MediaClass, MediaType
+from homeassistant.components.media_source import (
     BrowseMediaSource,
     MediaSource,
     MediaSourceItem,
     PlayMedia,
+    Unresolvable,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.const import CONF_USERNAME
+
+from sounds import SoundsClient
 
 from .const import DOMAIN
-from .sounds import SoundsClient
+
+if TYPE_CHECKING:
+    from . import BBCSoundsConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
-async def async_get_media_source(hass: HomeAssistant) -> MediaSource:
+
+async def async_get_media_source(hass: HomeAssistant) -> BBCSoundsMediaSource:
     """Set up BBC Sounds media source."""
     return BBCSoundsMediaSource(hass)
 
 
 class BBCSoundsMediaSource(MediaSource):
-    """Provide BBC Sounds as media source."""
+    """Provide BBC Sounds stations as a media source."""
 
     name = "BBC Sounds"
 
     def __init__(self, hass: HomeAssistant) -> None:
-        """Initialize BBC Sounds media source."""
+        """Initialize the media source."""
         super().__init__(DOMAIN)
         self.hass = hass
 
-    @property
-    def client(self) -> SoundsClient | None:
-        """Return the SoundsClient."""
-        # We assume single instance for now as per manifest
-        if not self.hass.data.get(DOMAIN):
-            return None
-        # Return the first available client
-        return next(iter(self.hass.data[DOMAIN].values()), None)
+    def _get_client(self) -> SoundsClient | None:
+        """Get the SoundsClient from the config entry."""
+        entries = self.hass.config_entries.async_entries(DOMAIN)
+        if entries:
+            entry: BBCSoundsConfigEntry = entries[0]
+            return entry.runtime_data
+        return None
 
     async def async_resolve_media(self, item: MediaSourceItem) -> PlayMedia:
-        """Resolve media to a url."""
-        client = self.client
+        """Resolve a media item to a playable URL."""
+        client = self._get_client()
         if not client:
             raise Unresolvable("BBC Sounds not configured")
 
         identifier = item.identifier
-        # Identifier format: "type/id" e.g. "live/bbc_radio_fourfm"
-        
+        if not identifier:
+            raise Unresolvable("No station specified")
+
+        # Identifier format: "live/{station_id}" e.g. "live/bbc_radio_fourfm"
         parts = identifier.split("/", 1)
         if len(parts) != 2:
-             raise Unresolvable(f"Invalid identifier: {identifier}")
-        
-        media_type, item_id = parts
+            raise Unresolvable(f"Invalid identifier format: {identifier}")
+
+        media_type, station_id = parts
 
         try:
-            # For live radio, we need to use get_live_stream
             if media_type == "live":
+                # Get live stream URL
                 stream_url = await client.streaming.get_live_stream(
-                    item_id, stream_format="hls"
+                    station_id, stream_format="hls"
                 )
-                return PlayMedia(stream_url, "application/vnd.apple.mpegurl")
-            
-            # For other types (future), use get_by_pid
-            stream = await client.streaming.get_by_pid(item_id, stream_format="hls")
-            
-            if not stream or not stream.url:
-                 raise Unresolvable(f"Could not resolve stream for {item_id}")
-
-            # Determine mime type
-            mime_type = "application/vnd.apple.mpegurl"
-            if stream.url.endswith(".mp3"):
-                mime_type = "audio/mpeg"
-            elif stream.url.endswith(".mpd"):
-                mime_type = "application/dash+xml"
-
-            return PlayMedia(stream.url, mime_type)
-            
+                return PlayMedia(
+                    url=stream_url,
+                    mime_type="application/vnd.apple.mpegurl",
+                )
+            else:
+                # For on-demand content, use get_by_pid
+                stream = await client.streaming.get_by_pid(
+                    station_id, include_stream=True, stream_format="hls"
+                )
+                if not stream or not stream.stream or not stream.stream.url:
+                    raise Unresolvable(f"Could not get stream for {station_id}")
+                return PlayMedia(
+                    url=stream.stream.url,
+                    mime_type="application/vnd.apple.mpegurl",
+                )
         except Exception as err:
-            raise Unresolvable(f"Could not resolve media: {err}") from err
-
+            _LOGGER.error("Error resolving media for %s: %s", identifier, err)
+            raise Unresolvable(f"Could not resolve stream: {err}") from err
 
     async def async_browse_media(
-        self,
-        media_content_id: MediaSourceItem | str | None = None,
+        self, item: MediaSourceItem
     ) -> BrowseMediaSource:
-        """Browse media."""
-        try:
-            # Handle MediaSourceItem being passed as first argument
-            if isinstance(media_content_id, MediaSourceItem):
-                media_content_id = media_content_id.identifier
-
-            client = self.client
-            if not client:
-                raise MediaSourceError("BBC Sounds not configured")
-
-            if media_content_id is None or media_content_id == "":
-                return await self._async_browse_root()
-            
-            parts = media_content_id.split("/", 1)
-            category = parts[0]
-            
-            if category == "live":
-                return await self._async_browse_live()
-            
-            # Future: Add "my_sounds" etc.
-            
-            raise MediaSourceError(f"Unknown category {category}")
-        except Exception as err:
-            raise
-
-    async def _async_browse_root(self) -> BrowseMediaSource:
-        """Browse root folder."""
-        children = [
-            BrowseMediaSource(
-                domain=DOMAIN,
-                identifier="live",
-                media_class="directory",
-                media_content_type="library",
-                title="Live Radio",
-                can_play=False,
-                can_expand=True,
-            )
-        ]
+        """Browse available BBC radio stations."""
+        client = self._get_client()
         
+        if not client:
+            return BrowseMediaSource(
+                domain=DOMAIN,
+                identifier=None,
+                media_class=MediaClass.CHANNEL,
+                media_content_type=MediaType.MUSIC,
+                title="BBC Sounds",
+                can_play=False,
+                can_expand=False,
+                children=[],
+            )
+
+        identifier = item.identifier if item.identifier else ""
+
+        # Root or "live" - show live stations
+        if identifier == "" or identifier == "live":
+            return await self._browse_live_stations(client)
+
+        # Unknown path
+        return await self._browse_root()
+
+    async def _browse_root(self) -> BrowseMediaSource:
+        """Browse root folder."""
         return BrowseMediaSource(
             domain=DOMAIN,
             identifier="",
-            media_class="directory",
-            media_content_type="library",
+            media_class=MediaClass.DIRECTORY,
+            media_content_type=MediaType.MUSIC,
             title="BBC Sounds",
             can_play=False,
             can_expand=True,
-            children_media_class="directory",
-            children=children,
-            thumbnail="/api/bbc_sounds/logo",
+            children=[
+                BrowseMediaSource(
+                    domain=DOMAIN,
+                    identifier="live",
+                    media_class=MediaClass.DIRECTORY,
+                    media_content_type=MediaType.MUSIC,
+                    title="Live Radio",
+                    can_play=False,
+                    can_expand=True,
+                )
+            ],
         )
 
-    async def _async_browse_live(self) -> BrowseMediaSource:
-        """Browse live stations."""
-        # Hardcoding popular stations first or fetching from API?
-        # Let's try to fetch from API if possible, otherwise hardcode some popular ones as fallback or initial implementation.
-        # But SoundsClient doesn't seem to have a simple "get_all_stations" method exposed at top level?
-        # Reference implementation does `client.stations.get_stations()`? 
-        # I need to check `stations` module of `auntie-sounds` or how reference implementation gets list.
-        # Reference `__init__.py` has `_convert_track` etc, but browsing lists?
-        # Reference uses `get_network_stations` or `get_stations`?
-        
-        # Checking `Stations` in `auntie-sounds` requires reading `sounds/stations.py` usually.
-        # But let's assume `client.stations` exists.
-        # The reference implementation `_fetch_menu` calls `client.personal.get_experience_menu` for authenticated users.
-        # For general browsing, `Adaptor` converts things.
-        
-        # Let's list specific popular stations for now to ensure Radio 4 works as requested.
-        # Radio 4 FM PID: bbc_radio_fourfm
-        # Radio 4 LW PID: bbc_radio_fourlw
-        
+    async def _browse_live_stations(self, client: SoundsClient) -> BrowseMediaSource:
+        """Browse live radio stations dynamically from API."""
+        children = []
+
+        try:
+            stations = await client.stations.get_stations()
+            
+            for station in stations:
+                if not station or not station.item_id:
+                    continue
+
+                # Get station name
+                name = "Unknown Station"
+                if station.network and station.network.short_title:
+                    name = station.network.short_title
+                elif hasattr(station, "titles") and station.titles:
+                    name = station.titles.get("primary", "Unknown Station")
+
+                # Get station logo
+                thumbnail = None
+                if station.network and station.network.logo_url:
+                    thumbnail = station.network.logo_url
+                elif hasattr(station, "image_url") and station.image_url:
+                    thumbnail = station.image_url
+
+                children.append(
+                    BrowseMediaSource(
+                        domain=DOMAIN,
+                        identifier=f"live/{station.item_id}",
+                        media_class=MediaClass.CHANNEL,
+                        media_content_type=MediaType.MUSIC,
+                        title=name,
+                        can_play=True,
+                        can_expand=False,
+                        thumbnail=thumbnail,
+                    )
+                )
+        except Exception as err:
+            _LOGGER.error("Error fetching BBC stations: %s", err)
+            # Fallback to popular stations if API fails
+            children = self._get_fallback_stations()
+
+        return BrowseMediaSource(
+            domain=DOMAIN,
+            identifier="live",
+            media_class=MediaClass.DIRECTORY,
+            media_content_type=MediaType.MUSIC,
+            title="Live Radio",
+            can_play=False,
+            can_expand=True,
+            children=children,
+        )
+
+    def _get_fallback_stations(self) -> list[BrowseMediaSource]:
+        """Return popular stations as fallback if API fails."""
         stations = [
             ("BBC Radio 1", "bbc_radio_one"),
             ("BBC Radio 2", "bbc_radio_two"),
@@ -171,28 +205,15 @@ class BBCSoundsMediaSource(MediaSource):
             ("BBC World Service", "bbc_world_service"),
         ]
         
-        children = []
-        for name, pid in stations:
-            children.append(
-                BrowseMediaSource(
-                    domain=DOMAIN,
-                    identifier=f"live/{pid}",
-                    media_class="music",
-                    media_content_type="audio/mpeg",
-                    title=name,
-                    can_play=True,
-                    can_expand=False,
-                )
+        return [
+            BrowseMediaSource(
+                domain=DOMAIN,
+                identifier=f"live/{pid}",
+                media_class=MediaClass.CHANNEL,
+                media_content_type=MediaType.MUSIC,
+                title=name,
+                can_play=True,
+                can_expand=False,
             )
-            
-        return BrowseMediaSource(
-            domain=DOMAIN,
-            identifier="live",
-            media_class="directory",
-            media_content_type="library",
-            title="Live Radio",
-            can_play=False,
-            can_expand=True,
-            children_media_class="music",
-            children=children,
-        )
+            for name, pid in stations
+        ]
