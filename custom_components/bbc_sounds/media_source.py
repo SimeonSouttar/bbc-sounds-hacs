@@ -66,6 +66,13 @@ class BBCSoundsMediaSource(MediaSource):
 
         try:
             if media_type == "live":
+                # Log auth state for debugging
+                _LOGGER.debug(
+                    "Resolving stream for %s - client.auth.is_logged_in: %s",
+                    station_id,
+                    client.auth.is_logged_in
+                )
+                
                 # Get station with stream URL using stations service
                 # This properly handles JWT token authentication
                 station = await client.stations.get_station(

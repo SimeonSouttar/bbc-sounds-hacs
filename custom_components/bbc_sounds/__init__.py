@@ -46,14 +46,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: BBCSoundsConfigEntry) ->
     
     if username and password:
         try:
+            _LOGGER.info("Attempting BBC Sounds authentication for %s", username)
             await client.auth.authenticate(username=username, password=password)
-            _LOGGER.debug("Authenticated with BBC Sounds as %s", username)
+            
+            # Verify login state
+            is_logged_in = client.auth.is_logged_in
+            _LOGGER.info(
+                "BBC Sounds authentication complete - logged_in: %s, user: %s",
+                is_logged_in,
+                username
+            )
+            
+            # Try to get user info to verify the session
+            try:
+                await client.auth.set_user_info()
+                is_uk = client.auth.is_uk_listener
+                country = client.auth.listener_country
+                _LOGGER.info(
+                    "BBC user info - is_uk_listener: %s, country: %s",
+                    is_uk,
+                    country
+                )
+            except Exception as user_info_err:
+                _LOGGER.warning("Could not fetch user info: %s", user_info_err)
+                
         except exceptions.LoginFailedError as err:
+            _LOGGER.error("BBC login failed: %s", err)
             raise ConfigEntryAuthFailed("Invalid BBC account credentials") from err
         except exceptions.NetworkError as err:
+            _LOGGER.error("BBC network error: %s", err)
             raise ConfigEntryNotReady("Could not connect to BBC services") from err
         except exceptions.APIResponseError as err:
+            _LOGGER.error("BBC API error: %s", err)
             raise ConfigEntryNotReady(f"BBC API error: {err}") from err
+    else:
+        _LOGGER.info("BBC Sounds configured without credentials (anonymous access)")
     
     # Store client in runtime_data for media_source to access
     entry.runtime_data = client
