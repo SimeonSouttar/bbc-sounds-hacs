@@ -98,7 +98,23 @@ class BBCSoundsMediaSource(MediaSource):
                     mime_type="application/vnd.apple.mpegurl",
                 )
         except Exception as err:
-            _LOGGER.error("Error resolving media for %s: %s", identifier, err)
+            error_msg = str(err)
+            _LOGGER.error("Error resolving media for %s: %s", identifier, error_msg)
+            
+            # Provide helpful error messages for common issues
+            if "no token could be provided" in error_msg.lower():
+                raise Unresolvable(
+                    "BBC Sounds streaming requires a UK IP address. "
+                    "The BBC geo-restricts live radio streams to UK listeners only. "
+                    "If you're in the UK and seeing this error, try adding BBC account "
+                    "credentials in the integration settings."
+                ) from err
+            elif "401" in error_msg or "unauthorised" in error_msg.lower():
+                raise Unresolvable(
+                    "Authentication failed. Please check your BBC account credentials "
+                    "in the integration settings."
+                ) from err
+            
             raise Unresolvable(f"Could not resolve stream: {err}") from err
 
     async def async_browse_media(
