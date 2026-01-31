@@ -66,23 +66,35 @@ class BBCSoundsMediaSource(MediaSource):
 
         try:
             if media_type == "live":
-                # Get live stream URL
-                stream_url = await client.streaming.get_live_stream(
-                    station_id, stream_format="hls"
+                # Get station with stream URL using stations service
+                # This properly handles JWT token authentication
+                station = await client.stations.get_station(
+                    station_id, include_stream=True, stream_format="hls"
                 )
+                
+                if not station:
+                    raise Unresolvable(f"Station not found: {station_id}")
+                
+                # station.stream is a string URL
+                if not station.stream:
+                    raise Unresolvable(f"Could not get stream for {station_id}")
+                
+                _LOGGER.debug("Resolved %s to stream: %s", station_id, station.stream)
+                
                 return PlayMedia(
-                    url=stream_url,
+                    url=station.stream,
                     mime_type="application/vnd.apple.mpegurl",
                 )
             else:
                 # For on-demand content, use get_by_pid
-                stream = await client.streaming.get_by_pid(
+                episode = await client.streaming.get_by_pid(
                     station_id, include_stream=True, stream_format="hls"
                 )
-                if not stream or not stream.stream or not stream.stream.url:
+                # episode.stream is a string URL for on-demand content
+                if not episode or not episode.stream:
                     raise Unresolvable(f"Could not get stream for {station_id}")
                 return PlayMedia(
-                    url=stream.stream.url,
+                    url=episode.stream,
                     mime_type="application/vnd.apple.mpegurl",
                 )
         except Exception as err:
